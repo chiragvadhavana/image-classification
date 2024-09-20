@@ -2,7 +2,8 @@ import streamlit as st
 import requests
 import pandas as pd
 
-BACKEND_URL = "http://34.93.43.213:8000"  
+# BACKEND_URL = "http://34.93.43.213:8000"  
+BACKEND_URL = os.getenv('BACKEND_URL_ENV')
 
 def main():
     st.title("Image Classification App")
