@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from sqlalchemy.orm import Session
 from .database import SessionLocal, engine
@@ -5,10 +8,8 @@ from . import models, utils
 from .celery_tasks import process_task
 import uuid
 from .models import Base
-from dotenv import load_dotenv
 import os  
 
-load_dotenv()
 
 Base.metadata.create_all(bind=engine)
 
