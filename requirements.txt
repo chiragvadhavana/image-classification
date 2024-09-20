@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+google-cloud-storage
+google-generativeai
+python-multipart
+streamlit
+requests
+Pillow
+celery
+redis
+pandas
+python-dotenv 

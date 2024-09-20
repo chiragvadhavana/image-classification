@@ -1,0 +1,6 @@
+fastapipostgres/
+__pycache__/
+bot.txt
+main copy.py
+commands.txt
+.env
