@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import tempfile
 from google.cloud import storage
@@ -5,6 +8,8 @@ import google.generativeai as genai
 
 storage_client = storage.Client()
 bucket_name = os.getenv('GOOGLE_CLOUD_STORAGE_BUCKET')
+print(f"bucker name ENV: {bucket_name}")  
+
 
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 model = genai.GenerativeModel("gemini-1.5-flash")

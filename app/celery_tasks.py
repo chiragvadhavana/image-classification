@@ -12,6 +12,7 @@ import io
 import zipfile
 
 app = Celery('tasks', broker=os.getenv('REDIS_URL'))
+print(f"celery env - REDIS_URL: {os.getenv('REDIS_URL')}") 
 
 @app.task
 def process_task(file_data, filename, batch_id, is_zip=False):
