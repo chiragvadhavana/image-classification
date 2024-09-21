@@ -1,4 +1,3 @@
-version: "3"
 services:
   postgres:
     image: postgres
@@ -11,12 +10,14 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    restart: always  
 
   redis:
     image: redis
     container_name: redis_container
     ports:
       - "6379:6379"
-
+    restart: always  
+    
 volumes:
   postgres_data:
