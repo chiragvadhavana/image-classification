@@ -13,7 +13,6 @@ import uuid
 from .models import Base
 import os  
 
-
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -104,50 +103,49 @@ async def get_batches(db: Session = Depends(get_db)):
 #     return {"status": "error", "message": "No classify-image command found or event not a comment"}
 
 
+
 @app.post("/gitlab-webhook")
 async def gitlab_webhook(request: Request):
     logger.info("Received webhook request")
-    payload = await request.json()
+    
+    try:
+        payload = await request.json()
+        logger.info(f"Received payload: {payload}")
 
-    # Save the received payload to a JSON file for inspection (optional)
-    with open("received_data.json", "w") as f:
-        json.dump(payload, f, indent=4)
+        # Check if this is a comment event
+        if payload.get("object_kind") == "note":
+            comment = payload.get("object_attributes", {}).get("note", "")
+            logger.info(f"Received comment: {comment}")
 
-    # Check if this event is a note (comment) on an issue
-    if payload.get("object_kind") == "note":
-        comment = payload.get("object_attributes", {}).get("note", "")
-        logger.info(f"Received comment: {comment}")
-
-        # Check for the 'classify-image' command in the comment
-        if "classify-image" in comment:
-            # Extract image URL after the 'classify-image' command
-            command_parts = comment.split("classify-image")
-            if len(command_parts) > 1:
-                image_url = command_parts[1].strip()
+            # Check for the 'classify-image' command
+            if "classify-image" in comment:
+                # Extract image URL
+                image_url = comment.split("classify-image", 1)[1].strip()
                 logger.info(f"Extracted image URL: {image_url}")
 
-                # Download the image using the URL
-                try:
-                    image_response = requests.get(image_url)
-                    image_response.raise_for_status()  # Raises an HTTPError for bad responses
-                    logger.info("Successfully downloaded image")
+                # Download the image
+                logger.info(f"Downloading image from: {image_url}")
+                image_response = requests.get(image_url, timeout=30)
+                image_response.raise_for_status()
+                logger.info("Image downloaded successfully")
 
-                    # Prepare the file for the upload endpoint
-                    file_content = BytesIO(image_response.content)
-                    files = {"file": ("image.jpg", file_content, "image/jpeg")}
+                # Prepare the file for upload
+                file_content = BytesIO(image_response.content)
+                files = {"file": ("image.jpg", file_content, "image/jpeg")}
 
-                    # Send the image to your /upload endpoint
-                    upload_url = "http://localhost:8000/upload"  # Update this if needed
-                    upload_response = requests.post(upload_url, files=files)
-                    upload_response.raise_for_status()
+                # Send to upload endpoint
+                upload_url = "http://localhost:8000/upload"
+                logger.info(f"Sending file to upload endpoint: {upload_url}")
+                upload_response = requests.post(upload_url, files=files, timeout=60)
+                upload_response.raise_for_status()
 
-                    logger.info(f"Upload response status code: {upload_response.status_code}")
-                    logger.info(f"Upload response content: {upload_response.text}")
+                logger.info(f"Upload response status: {upload_response.status_code}")
+                logger.info(f"Upload response content: {upload_response.text}")
 
-                    return {"status": "success", "message": "Image received and passed to upload"}
-                except requests.RequestException as e:
-                    logger.error(f"Error during image download or upload: {str(e)}")
-                    return {"status": "error", "message": f"Failed to process image: {str(e)}"}
-    
-    logger.info("No classify-image command found or event not a comment")
-    return {"status": "error", "message": "No classify-image command found or event not a comment"}
+                return {"status": "success", "message": "Image processed successfully"}
+
+        return {"status": "info", "message": "No action taken"}
+
+    except Exception as e:
+        logger.error(f"Error in webhook processing: {str(e)}", exc_info=True)
+        return {"status": "error", "message": str(e)}
