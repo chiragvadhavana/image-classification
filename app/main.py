@@ -13,6 +13,7 @@ import uuid
 from .models import Base
 import os  
 
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -66,44 +67,7 @@ async def get_batches(db: Session = Depends(get_db)):
     return [{"batch_id": batch.batch_id, "status": batch.status, "upload_time": batch.upload_time} for batch in batches]
 
 
-#------------------------------------
-# @app.post("/gitlab-webhook")
-# async def gitlab_webhook(request: Request):
-#     payload = await request.json()
-
-#     # Save the received payload to a JSON file for inspection (optional)
-#     with open("received_data.json", "w") as f:
-#         json.dump(payload, f, indent=4)
-
-#     # Check if this event is a note (comment) on an issue
-#     if payload.get("object_kind") == "note":
-#         comment = payload.get("object_attributes", {}).get("note", "")
-        
-#         # Check for the 'classify-image' command in the comment
-#         if "classify-image" in comment:
-#             # Extract image URL after the 'classify-image' command
-#             command_parts = comment.split("classify-image")
-#             if len(command_parts) > 1:
-#                 image_url = command_parts[1].strip()
-
-#                 # Download the image using the URL
-#                 image_response = requests.get(image_url)
-#                 if image_response.status_code == 200:
-#                     # Send the image to your /upload endpoint
-#                     files = {"file": ("received_image.jpg", image_response.content)}
-#                     upload_response = requests.post("http://localhost:8000/upload", files=files)
-                    
-#                     if upload_response.status_code == 200:
-#                         return {"status": "success", "message": "Image received and passed to upload"}
-#                     else:
-#                         return {"status": "error", "message": "Failed to process image through upload endpoint"}
-#                 else:
-#                     return {"status": "error", "message": "Failed to download image"}
-    
-#     return {"status": "error", "message": "No classify-image command found or event not a comment"}
-
-
-
+# Assuming logger is already defined
 @app.post("/gitlab-webhook")
 async def gitlab_webhook(request: Request):
     logger.info("Received webhook request")
@@ -129,11 +93,13 @@ async def gitlab_webhook(request: Request):
                 image_response.raise_for_status()
                 logger.info("Image downloaded successfully")
 
-                # Prepare the file for upload
+                # Wrap the byte content in BytesIO for file upload
                 file_content = BytesIO(image_response.content)
+                
+                # Prepare the file to be sent to the upload endpoint
                 files = {"file": ("image.jpg", file_content, "image/jpeg")}
 
-                # Send to upload endpoint
+                # Send the file to the upload endpoint
                 upload_url = "http://localhost:8000/upload"
                 logger.info(f"Sending file to upload endpoint: {upload_url}")
                 upload_response = requests.post(upload_url, files=files, timeout=60)
