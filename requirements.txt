@@ -12,3 +12,4 @@ celery
 redis
 pandas
 python-dotenv 
+httpx
