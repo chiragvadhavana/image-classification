@@ -31,6 +31,7 @@ def get_db():
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    logger.info("into upload endpoint")
     batch_id = str(uuid.uuid4())
     
     try:
@@ -70,25 +71,20 @@ async def get_batches(db: Session = Depends(get_db)):
 # Assuming logger is already defined
 @app.post("/gitlab-webhook")
 async def gitlab_webhook(request: Request):
-    logger.info("Received webhook request")
     
     try:
         payload = await request.json()
-        logger.info(f"Received payload: {payload}")
 
         # Check if this is a comment event
         if payload.get("object_kind") == "note":
             comment = payload.get("object_attributes", {}).get("note", "")
-            logger.info(f"Received comment: {comment}")
 
             # Check for the 'classify-image' command
             if "classify-image" in comment:
                 # Extract image URL
                 image_url = comment.split("classify-image", 1)[1].strip()
-                logger.info(f"Extracted image URL: {image_url}")
 
                 # Download the image
-                logger.info(f"Downloading image from: {image_url}")
                 image_response = requests.get(image_url, timeout=30)
                 image_response.raise_for_status()
                 logger.info("Image downloaded successfully")
@@ -102,8 +98,8 @@ async def gitlab_webhook(request: Request):
                 # Send the file to the upload endpoint
                 upload_url = "http://localhost:8000/upload"
                 logger.info(f"Sending file to upload endpoint: {upload_url}")
-                upload_response = requests.post(upload_url, files=files, timeout=60)
-                upload_response.raise_for_status()
+                upload_response = requests.post(upload_url, files=files, timeout=30)
+                # upload_response.raise_for_status()
 
                 logger.info(f"Upload response status: {upload_response.status_code}")
                 logger.info(f"Upload response content: {upload_response.text}")
