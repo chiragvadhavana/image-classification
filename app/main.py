@@ -72,7 +72,7 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
     try:
         payload = await request.json()
         
-        # logger.info(f"Received GitLab webhook payload: {payload}")
+        logger.info(f"Received GitLab webhook payload: {payload}")
 
         if payload.get("object_kind") == "note" and payload.get("object_attributes", {}).get("note"):
             comment = payload["object_attributes"]["note"]
