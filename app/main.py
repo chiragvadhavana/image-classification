@@ -141,7 +141,8 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                 
                 is_zip = filename.lower().endswith('.zip')
                 process_task.delay(file_content, filename, batch_id, is_zip=is_zip)
-                
+                logger.info("started to wait for task completion")
+
                 # Wait for task completion
                 start_time = time.time()
                 while time.time() - start_time < MAX_WAIT_TIME:
@@ -151,9 +152,12 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                     time.sleep(5)  # Check every 5 seconds
                 
                 if batch.status == "Completed":
+                    logger.info("batch status completed")
+                    
                     # Generate CSV
                     csv_content = generate_csv(batch_id, db)
-                    
+                    logger.info("csv generated")
+
                     # Reply to the GitLab comment with CSV
                     project_id = payload["project"]["id"]
                     issue_iid = payload["issue"]["iid"]
@@ -168,12 +172,17 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                         "body": "Classification completed. Results attached."
                     }
                     headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
-                    
+                    logger.info("starting to send response back")
+
                     response = requests.post(reply_url, data=data, files=files, headers=headers)
+                    logger.info("response sent")
+                    
                     if response.status_code != 201:
                         logger.error(f"Failed to post reply to GitLab. Status code: {response.status_code}")
                 
                 elif batch.status == "Failed":
+                    logger.info("status failed entered")
+
                     # Reply with failure message
                     project_id = payload["project"]["id"]
                     issue_iid = payload["issue"]["iid"]
