@@ -77,112 +77,6 @@ async def get_batches(db: Session = Depends(get_db)):
     return [{"batch_id": batch.batch_id, "status": batch.status, "upload_time": batch.upload_time} for batch in batches]
 
 
-# @app.post("/gitlab-webhook")
-# async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
-#     try:
-#         payload = await request.json()
-#         logger.info(f"Received GitLab webhook payload: {payload}")
-
-#         if payload.get("object_kind") == "note" and payload.get("object_attributes", {}).get("note"):
-#             comment = payload["object_attributes"]["note"]
-            
-#             if "classify-image" in comment:
-#                 image_url = comment.split("classify-image", 1)[1].strip()
-                
-#                 async with httpx.AsyncClient() as client:
-#                     response = await client.get(image_url)
-#                     response.raise_for_status()
-                
-#                 file_content = response.content
-#                 filename = image_url.split("/")[-1]
-                
-#                 batch_id = str(uuid.uuid4())
-#                 batch = models.BatchUpload(batch_id=batch_id, status="In-queue")
-#                 db.add(batch)
-#                 db.commit()
-                
-#                 is_zip = filename.lower().endswith('.zip')
-#                 process_task.delay(file_content, filename, batch_id, is_zip=is_zip)
-#                 logger.info("started to wait for task completion")
-
-#                 # Wait for task completion
-#                 start_time = time.time()
-#                 while time.time() - start_time < MAX_WAIT_TIME:
-#                     db.refresh(batch)
-#                     if batch.status in ["Completed", "Failed"]:
-#                         break
-#                     time.sleep(5)  # Check every 5 seconds
-                
-#                 project_id = payload["project"]["id"]
-#                 issue_iid = payload["issue"]["iid"]
-#                 discussion_id = payload["object_attributes"]["discussion_id"]
-                
-#                 if batch.status == "Completed":
-#                     logger.info("batch status completed")
-                    
-#                     # Generate CSV
-#                     csv_content = generate_csv(batch_id, db)
-#                     logger.info("csv generated")
-
-#                     # Reply to the GitLab discussion with CSV
-#                     reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
-                    
-#                     files = {
-#                         'file': ('results.csv', csv_content, 'text/csv')
-#                     }
-#                     data = {
-#                         "body": "Classification completed. Results attached."
-#                     }
-#                     headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
-#                     logger.info("starting to send response back")
-
-#                     response = requests.post(reply_url, data=data, files=files, headers=headers)
-#                     logger.info("response sent")
-                    
-#                     if response.status_code != 201:
-#                         logger.error(f"Failed to post reply to GitLab. Status code: {response.status_code}")
-                
-#                 elif batch.status == "Failed":
-#                     logger.info("status failed entered")
-
-#                     # Reply with failure message
-#                     reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
-#                     data = {
-#                         "body": "Classification failed. Please try again or contact support."
-#                     }
-#                     headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
-                    
-#                     response = requests.post(reply_url, json=data, headers=headers)
-#                     if response.status_code != 201:
-#                         logger.error(f"Failed to post reply to GitLab. Status code: {response.status_code}")
-                
-#                 else:
-#                     # Task didn't complete in time
-#                     logger.error(f"Task processing timed out for batch {batch_id}")
-                
-#                 return {"message": "Processing complete", "batch_id": batch_id, "status": batch.status}
-        
-#         return {"message": "No action taken"}
-    
-#     except httpx.HTTPError as e:
-#         logger.error(f"HTTP error occurred while fetching the image: {str(e)}")
-#         raise HTTPException(status_code=400, detail=f"Failed to fetch image: {str(e)}")
-#     except Exception as e:
-#         logger.error(f"Error processing GitLab webhook: {str(e)}", exc_info=True)
-#         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-# def generate_csv(batch_id, db):
-#     tasks = db.query(models.UploadTask).filter(models.UploadTask.batch_id == batch_id).all()
-    
-#     csv_io = StringIO()
-#     csv_writer = csv.writer(csv_io)
-#     csv_writer.writerow(["Filename", "Status", "Result"])
-    
-#     for task in tasks:
-#         csv_writer.writerow([task.filename, task.status, task.result])
-    
-#     return csv_io.getvalue()
-
 @app.post("/gitlab-webhook")
 async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
     try:
@@ -209,7 +103,7 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                 
                 is_zip = filename.lower().endswith('.zip')
                 process_task.delay(file_content, filename, batch_id, is_zip=is_zip)
-                logger.info("started to wait for task completion")
+                logger.info("Started to wait for task completion")
 
                 # Wait for task completion
                 start_time = time.time()
@@ -224,32 +118,41 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                 discussion_id = payload["object_attributes"]["discussion_id"]
                 
                 if batch.status == "Completed":
-                    logger.info("batch status completed")
+                    logger.info("Batch status completed")
                     
                     # Generate CSV
                     csv_content = generate_csv(batch_id, db)
-                    logger.info("csv generated")
+                    logger.info("CSV generated")
 
-                    # Reply to the GitLab discussion with CSV
+                    # Upload CSV to GitLab
+                    upload_url = f"{GITLAB_API_URL}/projects/{project_id}/uploads"
+                    files = {'file': (f'batch_{batch_id}_results.csv', csv_content)}
+                    headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
+                    
+                    upload_response = requests.post(upload_url, files=files, headers=headers)
+                    if upload_response.status_code != 201:
+                        logger.error(f"Failed to upload CSV to GitLab. Status code: {upload_response.status_code}")
+                        raise Exception("Failed to upload CSV")
+
+                    upload_data = upload_response.json()
+                    download_url = f"https://gitlab.com{upload_data['full_path']}"
+
+                    # Reply to the GitLab discussion with CSV download link
                     reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
                     
-                    # Construct the correct download URL for the CSV
-                    download_url = f"{GITLAB_API_URL}/-/project/{project_id}/uploads/{discussion_id}/{batch_id}_results.csv"
-
                     data = {
                         "body": f"Classification completed. Results attached: [Download CSV]({download_url})"
                     }
-                    headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
-                    logger.info("starting to send response back")
-
+                    
+                    logger.info("Starting to send response back")
                     response = requests.post(reply_url, json=data, headers=headers)
-                    logger.info("response sent")
+                    logger.info("Response sent")
                     
                     if response.status_code != 201:
                         logger.error(f"Failed to post reply to GitLab. Status code: {response.status_code}")
 
                 elif batch.status == "Failed":
-                    logger.info("status failed entered")
+                    logger.info("Status failed entered")
 
                     # Reply with failure message
                     reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
