@@ -61,3 +61,4 @@ def process_zip(zip_data, zip_filename, batch: BatchUpload, db: Session):
             if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
                 file_data = zip_file.read(filename)
                 process_single_file(file_data, filename, batch, db)
+
