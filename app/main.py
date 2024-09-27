@@ -233,25 +233,21 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                     # Reply to the GitLab discussion with CSV
                     reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
                     
-                    # Generate the full CSV URL
-                    csv_filename = f"batch_{batch_id}_results.csv"
-                    csv_full_url = f"https://gitlab.com/-/project/{project_id}/uploads/{csv_filename}"
-                    
-                    files = {
-                        'file': (csv_filename, csv_content, 'text/csv')
-                    }
+                    # Construct the correct download URL for the CSV
+                    download_url = f"{GITLAB_API_URL}/-/project/{project_id}/uploads/{discussion_id}/{batch_id}_results.csv"
+
                     data = {
-                        "body": f"Classification completed. Results attached: [Download CSV]({csv_full_url})"
+                        "body": f"Classification completed. Results attached: [Download CSV]({download_url})"
                     }
                     headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
                     logger.info("starting to send response back")
 
-                    response = requests.post(reply_url, data=data, files=files, headers=headers)
+                    response = requests.post(reply_url, json=data, headers=headers)
                     logger.info("response sent")
                     
                     if response.status_code != 201:
                         logger.error(f"Failed to post reply to GitLab. Status code: {response.status_code}")
-                
+
                 elif batch.status == "Failed":
                     logger.info("status failed entered")
 
