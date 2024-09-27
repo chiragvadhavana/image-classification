@@ -115,7 +115,6 @@ async def get_batches(db: Session = Depends(get_db)):
 #         logger.error(f"Error processing GitLab webhook: {str(e)}", exc_info=True)
 #         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-
 @app.post("/gitlab-webhook")
 async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
     try:
@@ -152,6 +151,10 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                         break
                     time.sleep(5)  # Check every 5 seconds
                 
+                project_id = payload["project"]["id"]
+                issue_iid = payload["issue"]["iid"]
+                discussion_id = payload["object_attributes"]["discussion_id"]
+                
                 if batch.status == "Completed":
                     logger.info("batch status completed")
                     
@@ -159,12 +162,8 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                     csv_content = generate_csv(batch_id, db)
                     logger.info("csv generated")
 
-                    # Reply to the GitLab comment with CSV
-                    project_id = payload["project"]["id"]
-                    issue_iid = payload["issue"]["iid"]
-                    note_id = payload["object_attributes"]["id"]
-                    
-                    reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/notes/{note_id}/discussions"
+                    # Reply to the GitLab discussion with CSV
+                    reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
                     
                     files = {
                         'file': ('results.csv', csv_content, 'text/csv')
@@ -185,11 +184,7 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                     logger.info("status failed entered")
 
                     # Reply with failure message
-                    project_id = payload["project"]["id"]
-                    issue_iid = payload["issue"]["iid"]
-                    note_id = payload["object_attributes"]["id"]
-                    
-                    reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/notes/{note_id}/discussions"
+                    reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
                     data = {
                         "body": "Classification failed. Please try again or contact support."
                     }
