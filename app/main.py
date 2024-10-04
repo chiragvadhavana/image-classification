@@ -18,8 +18,6 @@ from io import StringIO
 import time
 
 
-
-
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -103,73 +101,11 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                 
                 is_zip = filename.lower().endswith('.zip')
                 process_task.delay(file_content, filename, batch_id, is_zip=is_zip)
-                logger.info("Started to wait for task completion")
-
-                # Wait for task completion
-                start_time = time.time()
-                while time.time() - start_time < MAX_WAIT_TIME:
-                    db.refresh(batch)
-                    if batch.status in ["Completed", "Failed"]:
-                        break
-                    time.sleep(5)  # Check every 5 seconds
                 
-                project_id = payload["project"]["id"]
-                issue_iid = payload["issue"]["iid"]
-                discussion_id = payload["object_attributes"]["discussion_id"]
+                # Start a background task to handle the rest of the process
+                asyncio.create_task(handle_task_completion(batch_id, payload, db))
                 
-                if batch.status == "Completed":
-                    logger.info("Batch status completed")
-                    
-                    # Generate CSV
-                    csv_content = generate_csv(batch_id, db)
-                    logger.info("CSV generated")
-
-                    # Upload CSV to GitLab
-                    upload_url = f"{GITLAB_API_URL}/projects/{project_id}/uploads"
-                    files = {'file': (f'batch_{batch_id}_results.csv', csv_content)}
-                    headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
-                    
-                    upload_response = requests.post(upload_url, files=files, headers=headers)
-                    if upload_response.status_code != 201:
-                        logger.error(f"Failed to upload CSV to GitLab. Status code: {upload_response.status_code}")
-                        raise Exception("Failed to upload CSV")
-
-                    upload_data = upload_response.json()
-                    download_url = f"https://gitlab.com{upload_data['full_path']}"
-
-                    # Reply to the GitLab discussion with CSV download link
-                    reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
-                    
-                    data = {
-                        "body": f"Classification completed. Results attached: [Download CSV]({download_url})"
-                    }
-                    
-                    logger.info("Starting to send response back")
-                    response = requests.post(reply_url, json=data, headers=headers)
-                    logger.info("Response sent")
-                    
-                    if response.status_code != 201:
-                        logger.error(f"Failed to post reply to GitLab. Status code: {response.status_code}")
-
-                elif batch.status == "Failed":
-                    logger.info("Status failed entered")
-
-                    # Reply with failure message
-                    reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
-                    data = {
-                        "body": "Classification failed. Please try again or contact support."
-                    }
-                    headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
-                    
-                    response = requests.post(reply_url, json=data, headers=headers)
-                    if response.status_code != 201:
-                        logger.error(f"Failed to post reply to GitLab. Status code: {response.status_code}")
-                
-                else:
-                    # Task didn't complete in time
-                    logger.error(f"Task processing timed out for batch {batch_id}")
-                
-                return {"message": "Processing complete", "batch_id": batch_id, "status": batch.status}
+                return {"message": "Processing started", "batch_id": batch_id}
         
         return {"message": "No action taken"}
     
@@ -179,6 +115,46 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error processing GitLab webhook: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+async def handle_task_completion(batch_id: str, payload: dict, db: Session):
+    MAX_WAIT_TIME = 300
+    start_time = asyncio.get_event_loop().time()
+    
+    while asyncio.get_event_loop().time() - start_time < MAX_WAIT_TIME:
+        db.refresh(db.query(models.BatchUpload).filter(models.BatchUpload.batch_id == batch_id).first())
+        batch = db.query(models.BatchUpload).filter(models.BatchUpload.batch_id == batch_id).first()
+        if batch.status in ["Completed", "Failed"]:
+            break
+        await asyncio.sleep(5)  # Check every 5 seconds
+    
+    if batch.status == "Completed":
+        try:
+            csv_content = generate_csv(batch_id, db)
+            project_id = payload["project"]["id"]
+            issue_iid = payload["issue"]["iid"]
+            discussion_id = payload["object_attributes"]["discussion_id"]
+            
+            async with httpx.AsyncClient() as client:
+                # Upload CSV to GitLab
+                upload_url = f"{GITLAB_API_URL}/projects/{project_id}/uploads"
+                files = {'file': (f'batch_{batch_id}_results.csv', csv_content)}
+                headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
+                upload_response = await client.post(upload_url, files=files, headers=headers)
+                upload_response.raise_for_status()
+                upload_data = upload_response.json()
+                download_url = f"https://gitlab.com{upload_data['full_path']}"
+
+                # Post comment to GitLab
+                reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
+                data = {
+                    "body": f"Classification completed. Results attached: [Download CSV]({download_url})"
+                }
+                await client.post(reply_url, json=data, headers=headers)
+        except Exception as e:
+            logger.error(f"Error handling task completion: {str(e)}", exc_info=True)
+    else:
+        logger.error(f"Task processing failed or timed out for batch {batch_id}")
+
 
 def generate_csv(batch_id, db):
     tasks = db.query(models.UploadTask).filter(models.UploadTask.batch_id == batch_id).all()

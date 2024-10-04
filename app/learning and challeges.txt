@@ -1,0 +1,37 @@
+postgres
+celery
+fastapi 
+redis
+streamlit
+
+putty, puttygen.
+installed docker in vm
+creating firewall rule and allowing port in vm
+virtual environment
+
+- system demon files. 
+    first, created single script that runs all command.
+    then, created seperate service files for each command. 
+- made sure that docker compose only runs once docker service is running.
+- swtiched to docker compose because i had to run multiple scripts to start multiple docker containers.
+
+environment variables
+docker and docker compose
+systemctl commands
+journalctl commands for logs
+
+--------
+git connector
+    gitlab 
+    webhook (on issue comments)
+    only direct server links working. 
+    switched to httpx from requests
+    vm external ip keeps changing so have to change ip in gitlab webhook.
+-----------------------
+
+- python version issues due to dependency errors caused by gemini api. 
+- first i used docker run for redis and postgres and then i imporovised it by using docker compose. 
+- first i used only one system demon file which ran the script of all the commands but that was not good practice. so then created individual services demon file for each command. 
+- system demon wasn't working correctly because docker compose command was running before docker is started itself, due to that containers wren't getting created on restart. in demon file of docker compose, made sure that once docker starts then docker compose runs. 
+- first i had only one table in postgres table containing batchid and taskid. that approahc made it hard to create history page. so i restuctred app and create two tables with relation to each other. 
+
