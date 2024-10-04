@@ -16,6 +16,7 @@ import httpx
 import csv
 from io import StringIO
 import time
+import asyncio
 
 
 Base.metadata.create_all(bind=engine)
