@@ -103,7 +103,6 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
                 is_zip = filename.lower().endswith('.zip')
                 process_task.delay(file_content, filename, batch_id, is_zip=is_zip)
                 
-                # Start a background task to handle the rest of the process
                 asyncio.create_task(handle_task_completion(batch_id, payload, db))
                 
                 return {"message": "Processing started", "batch_id": batch_id}
@@ -118,16 +117,17 @@ async def gitlab_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 async def handle_task_completion(batch_id: str, payload: dict, db: Session):
-    MAX_WAIT_TIME = 300
-    start_time = asyncio.get_event_loop().time()
+    # MAX_WAIT_TIME   = 300
+    # start_time = asyncio.get_event_loop().time()
     
-    while asyncio.get_event_loop().time() - start_time < MAX_WAIT_TIME:
+    # while asyncio.get_event_loop().time() - start_time < MAX_WAIT_TIME:
+    while True:
         db.refresh(db.query(models.BatchUpload).filter(models.BatchUpload.batch_id == batch_id).first())
         batch = db.query(models.BatchUpload).filter(models.BatchUpload.batch_id == batch_id).first()
         if batch.status in ["Completed", "Failed"]:
             break
-        await asyncio.sleep(5)  # Check every 5 seconds
-    
+        await asyncio.sleep(5)  
+        
     if batch.status == "Completed":
         try:
             csv_content = generate_csv(batch_id, db)
@@ -136,7 +136,6 @@ async def handle_task_completion(batch_id: str, payload: dict, db: Session):
             discussion_id = payload["object_attributes"]["discussion_id"]
             
             async with httpx.AsyncClient() as client:
-                # Upload CSV to GitLab
                 upload_url = f"{GITLAB_API_URL}/projects/{project_id}/uploads"
                 files = {'file': (f'batch_{batch_id}_results.csv', csv_content)}
                 headers = {"PRIVATE-TOKEN": GITLAB_API_TOKEN}
@@ -145,7 +144,6 @@ async def handle_task_completion(batch_id: str, payload: dict, db: Session):
                 upload_data = upload_response.json()
                 download_url = f"https://gitlab.com{upload_data['full_path']}"
 
-                # Post comment to GitLab
                 reply_url = f"{GITLAB_API_URL}/projects/{project_id}/issues/{issue_iid}/discussions/{discussion_id}/notes"
                 data = {
                     "body": f"Classification completed. Results attached: [Download CSV]({download_url})"
